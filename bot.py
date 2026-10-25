@@ -30,8 +30,8 @@ def send_telegram(bot_token, chat_id, text):
 
 class EtholClient:
     def __init__(self, nrp, password):
-        self.nrp = nrp
-        self.password = password
+        self.nrp = nrp.strip() if nrp else ""
+        self.password = password.strip() if password else ""
         self.token = None
         self.cookie_jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(
@@ -40,20 +40,24 @@ class EtholClient:
         )
 
     def login_cas(self):
-        print(f"[INFO] Autentikasi CAS PENS untuk NRP: {self.nrp}...")
+        print(f"[INFO] Menghubungi CAS PENS untuk autentikasi NRP: {self.nrp}...")
         cas_url = "https://login.pens.ac.id/cas/login?service=https%3A%2F%2Fethol.pens.ac.id%2Fapi%2Fauth%2Fcas-callback"
         
         req = urllib.request.Request(cas_url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
-        resp = self.opener.open(req)
-        html = resp.read().decode("utf-8", errors="ignore")
+        try:
+            resp = self.opener.open(req)
+            html = resp.read().decode("utf-8", errors="ignore")
+        except Exception as e:
+            print(f"[ERROR] Tidak dapat membuka halaman login CAS PENS: {e}")
+            return False
 
         lt_match = re.search(r'name="lt"\s+value="([^"]+)"', html)
         action_match = re.search(r'action="([^"]+)"', html)
 
         if not lt_match or not action_match:
-            print("[ERROR] Gagal memuat formulir login CAS PENS.")
+            print("[ERROR] Formulir login CAS PENS tidak dikenali.")
             return False
 
         lt = lt_match.group(1)
@@ -73,15 +77,36 @@ class EtholClient:
             "Referer": resp.geturl()
         })
 
-        resp_post = self.opener.open(req_post)
+        try:
+            resp_post = self.opener.open(req_post)
+            final_url = resp_post.geturl()
+            post_html = resp_post.read().decode("utf-8", errors="ignore")
+        except Exception as e:
+            print(f"[ERROR] Kendala saat mengirim data login ke CAS: {e}")
+            return False
+
+        print(f"[INFO] URL setelah login: {final_url}")
+
+        # Periksa apakah ada pesan error dari CAS
+        cas_error_match = re.search(r'<div[^>]*class="[^"]*(?:errors|alert|status)[^"]*"[^>]*>(.*?)</div>', post_html, re.I | re.S)
+        if cas_error_match:
+            clean_err = re.sub(r'<[^>]+>', '', cas_error_match.group(1)).strip()
+            print(f"[CAS MESSAGE] {clean_err}")
+
+        # Periksa daftar cookie yang didapatkan
+        cookie_names = [c.name for c in self.cookie_jar]
+        print(f"[INFO] Cookie yang diterima: {cookie_names}")
 
         for cookie in self.cookie_jar:
             if cookie.name == "token":
                 self.token = cookie.value
-                print("[SUCCESS] Berhasil login ke ETHOL. Token session aktif.")
+                print("[SUCCESS] Berhasil login ke ETHOL! Token sesi aktif.")
                 return True
 
-        print("[ERROR] Login gagal! Silakan periksa kembali NRP dan Password PENS di GitHub Secrets.")
+        if "login.pens.ac.id" in final_url:
+            print("[ERROR] Login gagal ditolak oleh CAS PENS. Pastikan PENS_NRP dan PENS_PASSWORD di GitHub Secrets sudah sesuai.")
+        else:
+            print("[ERROR] Login berhasil diarahkan, tetapi cookie token tidak ditemukan.")
         return False
 
     def fetch_presensi_notifikasi(self):
@@ -113,14 +138,12 @@ class EtholClient:
 
 def parse_iso_datetime(iso_str):
     try:
-        # Menangani format '2026-10-23T03:05:00.000Z'
         clean_str = iso_str.replace("Z", "+00:00")
         return datetime.fromisoformat(clean_str)
     except Exception:
         return None
 
 def main():
-    # Mengambil kredensial dari Environment Variables (GitHub Secrets)
     nrp = os.environ.get("PENS_NRP")
     password = os.environ.get("PENS_PASSWORD")
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -135,7 +158,6 @@ def main():
     print(f"⚙️ Mode: {bot_mode}")
     print("=" * 60)
 
-    # Validasi keberadaan kredensial
     missing = []
     if not nrp: missing.append("PENS_NRP")
     if not password: missing.append("PENS_PASSWORD")
@@ -170,10 +192,9 @@ def main():
         if res and res.get("ok"):
             print("[SUCCESS] Pesan tes berhasil dikirim ke Telegram!")
         else:
-            print("[ERROR] Gagal mengirim pesan ke Telegram. Pastikan Chat ID valid dan bot sudah di-START.")
+            print("[ERROR] Gagal mengirim pesan ke Telegram.")
         return
 
-    # Periksa notifikasi dalam jendela waktu lookback_minutes
     for item in notif_list:
         created_at_str = item.get("createdAt")
         if not created_at_str:
