@@ -1,0 +1,39 @@
+name: ETHOL Presence Monitor
+
+on:
+  schedule:
+    # Berjalan setiap 10 menit pada jam kuliah: 07:00 - 18:00 WIB (00:00 - 11:00 UTC), Senin - Jumat
+    - cron: '*/10 0-11 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mode Eksekusi'
+        required: true
+        default: 'CRON'
+        type: choice
+        options:
+          - CRON
+          - TEST
+
+jobs:
+  check-ethol:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run ETHOL Bot
+        env:
+          PENS_NRP: ${{ secrets.PENS_NRP }}
+          PENS_PASSWORD: ${{ secrets.PENS_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LOOKBACK_MINUTES: "20"
+          BOT_MODE: ${{ github.event.inputs.mode || 'CRON' }}
+        run: |
+          python bot.py

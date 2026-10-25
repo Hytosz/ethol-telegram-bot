@@ -1,0 +1,16 @@
+# Sensitive credentials and config
+config.json
+.env
+*.env
+
+# Local state and logs
+history.json
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE files
+.vscode/
+.idea/
