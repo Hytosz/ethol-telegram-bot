@@ -7,6 +7,21 @@ import urllib.parse
 import http.cookiejar
 from datetime import datetime, timezone
 
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
+    return set()
+
+def save_history(history_set):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(history_set), f, indent=2)
+
 def send_telegram(bot_token, chat_id, text):
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
@@ -87,16 +102,6 @@ class EtholClient:
 
         print(f"[INFO] URL setelah login: {final_url}")
 
-        # Periksa apakah ada pesan error dari CAS
-        cas_error_match = re.search(r'<div[^>]*class="[^"]*(?:errors|alert|status)[^"]*"[^>]*>(.*?)</div>', post_html, re.I | re.S)
-        if cas_error_match:
-            clean_err = re.sub(r'<[^>]+>', '', cas_error_match.group(1)).strip()
-            print(f"[CAS MESSAGE] {clean_err}")
-
-        # Periksa daftar cookie yang didapatkan
-        cookie_names = [c.name for c in self.cookie_jar]
-        print(f"[INFO] Cookie yang diterima: {cookie_names}")
-
         for cookie in self.cookie_jar:
             if cookie.name == "token":
                 self.token = cookie.value
@@ -148,7 +153,7 @@ def main():
     password = os.environ.get("PENS_PASSWORD")
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    lookback_minutes = int(os.environ.get("LOOKBACK_MINUTES", "20"))
+    lookback_minutes = int(os.environ.get("LOOKBACK_MINUTES", "120"))
     bot_mode = os.environ.get("BOT_MODE", "CRON").upper()
 
     print("=" * 60)
@@ -177,6 +182,7 @@ def main():
 
     print(f"[INFO] Ditemukan {len(notif_list)} riwayat presensi di akun ETHOL.")
 
+    history = load_history()
     now_utc = datetime.now(timezone.utc)
     new_notif_count = 0
 
@@ -195,7 +201,22 @@ def main():
             print("[ERROR] Gagal mengirim pesan ke Telegram.")
         return
 
+    # Inisialisasi awal jika history masih kosong
+    if not history:
+        print("[INFO] History kosong. Menandai notifikasi lama agar tidak spam...")
+        for item in notif_list:
+            nid = item.get("idNotifikasi")
+            if nid:
+                history.add(nid)
+        save_history(history)
+        print(f"[INFO] {len(history)} notifikasi awal disimpan di history.")
+        return
+
     for item in notif_list:
+        notif_id = item.get("idNotifikasi")
+        if not notif_id or notif_id in history:
+            continue
+
         created_at_str = item.get("createdAt")
         if not created_at_str:
             continue
@@ -224,14 +245,16 @@ def main():
             res = send_telegram(bot_token, chat_id, alert_text)
             if res and res.get("ok"):
                 print("[SUCCESS] Notifikasi presensi terkirim ke Telegram!")
+                history.add(notif_id)
                 new_notif_count += 1
             else:
                 print("[ERROR] Gagal mengirim notifikasi ke Telegram.")
 
-    if new_notif_count == 0:
-        print("[INFO] Tidak ada presensi baru yang dibuka dalam kurun waktu pemantauan.")
-    else:
+    if new_notif_count > 0:
+        save_history(history)
         print(f"[DONE] Sukses mengirim {new_notif_count} notifikasi presensi baru.")
+    else:
+        print("[INFO] Tidak ada presensi baru yang dibuka dalam kurun waktu pemantauan.")
 
 if __name__ == "__main__":
     main()

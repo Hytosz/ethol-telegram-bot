@@ -4,7 +4,6 @@ config.json
 *.env
 
 # Local state and logs
-history.json
 *.log
 
 # Python cache
