@@ -18,7 +18,7 @@ Masuk ke repositori Anda di GitHub $\rightarrow$ **Settings** $\rightarrow$ **Se
 
 | Nama Secret | Nilai / Value |
 | :--- | :--- |
-| `PENS_NRP` | NRP Mahasiswa Anda (contoh: `2423600028`) |
+| `PENS_NRP` | NRP Mahasiswa Anda  |
 | `PENS_PASSWORD` | Password Akun PENS / CAS Anda |
 | `TELEGRAM_BOT_TOKEN` | Token Bot dari `@BotFather` |
 | `TELEGRAM_CHAT_ID` | Angka Chat ID dari `@userinfobot` |
